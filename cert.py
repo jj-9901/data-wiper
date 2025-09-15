@@ -1,4 +1,3 @@
-# cert.py
 import json, os, datetime, uuid, subprocess
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -13,13 +12,11 @@ def ensure_keys():
     pub = os.path.join(KEYS_DIR, "public.pem")
     if os.path.exists(priv) and os.path.exists(pub):
         return priv, pub
-    # generate ephemeral RSA keypair for demo
     subprocess.run(["openssl", "genpkey", "-algorithm", "RSA", "-out", priv, "-pkeyopt", "rsa_keygen_bits:2048"], check=True)
-    subprocess.run(["openssl", "rsa", "-in", priv, "-pubout", "-out", pub], check=True)
+    subprocess.run(["openssl", "-in", priv, "-pubout", "-out", pub], check=True)
     return priv, pub
 
 def make_tamper_checklist(dev: str, kind: str, methods_attempted: list):
-    # basic checklist: HPA/DCO check, secure-erase support, TRIM support, mounted FS, encryption
     checklist = []
     checklist.append(("HPA/DCO check attempted", "Recommended to run hdparm --dco-restore if HPA present"))
     if kind == "nvme":
@@ -29,43 +26,8 @@ def make_tamper_checklist(dev: str, kind: str, methods_attempted: list):
     if "blkdiscard" in methods_attempted or "blkdiscard-fallback" in methods_attempted:
         checklist.append(("TRIM/blkdiscard attempted", "blkdiscard used"))
     checklist.append(("Filesystem unmounted", "Partition/device should be unmounted before block-level wipe"))
-    checklist.append(("LUKS/BitLocker detection", "If encrypted, crypto-erase (key destroy) recommended"))
+    checklist.append(("LUKS/BitLocker detection", "If encrypted, crypto-erase recommended"))
     return checklist
-
-def make_certificate(info: dict, methods_attempted=None):
-    priv, pub = ensure_keys()
-    cert = {
-        "certificate_id": str(uuid.uuid4()),
-        "device": info.get("device"),
-        "device_kind": info.get("kind"),
-        "device_model": info.get("model", ""),
-        "device_serial": info.get("serial", ""),
-        "method": info.get("method"),
-        "methods_attempted": methods_attempted or [info.get("method")],
-        "passes": info.get("passes"),
-        "start_time": info.get("start_time") or datetime.datetime.utcnow().isoformat() + "Z",
-        "end_time": info.get("end_time") or datetime.datetime.utcnow().isoformat() + "Z",
-        "operator": info.get("operator", ""),
-        "result": info.get("result", ""),
-        "tamper_checklist": make_tamper_checklist(info.get("device"), info.get("kind"), methods_attempted or []),
-        "notes": info.get("notes","")
-    }
-    json_path = os.path.join(CERT_DIR, f"{cert['certificate_id']}.json")
-    with open(json_path, "w") as f:
-        json.dump(cert, f, indent=2)
-    # sign it
-    sig_path = json_path.replace(".json", ".sig")
-    subprocess.run(["openssl", "dgst", "-sha256", "-sign", priv, "-out", sig_path, json_path], check=True)
-    # also create a simple PDF summary
-    pdf_path = json_path.replace(".json", ".pdf")
-    _render_pdf(cert, pdf_path)
-    return {"json": json_path, "sig": sig_path, "pdf": pdf_path, "pubkey": pub}
-
-def verify_certificate(json_path, sig_path, pubkey_path=None):
-    if pubkey_path is None:
-        _, pubkey_path = ensure_keys()
-    rc = subprocess.run(["openssl", "dgst", "-sha256", "-verify", pubkey_path, "-signature", sig_path, json_path])
-    return rc.returncode == 0
 
 def _render_pdf(cert: dict, pdf_path: str):
     c = canvas.Canvas(pdf_path, pagesize=A4)
@@ -102,3 +64,30 @@ def _render_pdf(cert: dict, pdf_path: str):
             y = h-60
     c.save()
     return pdf_path
+
+def make_certificate(info: dict, methods_attempted=None):
+    priv, pub = ensure_keys()
+    cert = {
+        "certificate_id": str(uuid.uuid4()),
+        "device": info.get("device"),
+        "device_kind": info.get("kind"),
+        "device_model": info.get("model", ""),
+        "device_serial": info.get("serial", ""),
+        "method": info.get("method"),
+        "methods_attempted": methods_attempted or [info.get("method")],
+        "passes": info.get("passes"),
+        "start_time": info.get("start_time") or datetime.datetime.utcnow().isoformat() + "Z",
+        "end_time": info.get("end_time") or datetime.datetime.utcnow().isoformat() + "Z",
+        "operator": info.get("operator", ""),
+        "result": info.get("result", ""),
+        "tamper_checklist": make_tamper_checklist(info.get("device"), info.get("kind"), methods_attempted or []),
+        "notes": info.get("notes","")
+    }
+    json_path = os.path.join(CERT_DIR, f"{cert['certificate_id']}.json")
+    with open(json_path, "w") as f:
+        json.dump(cert, f, indent=2)
+    sig_path = json_path.replace(".json", ".sig")
+    subprocess.run(["openssl", "dgst", "-sha256", "-sign", priv, "-out", sig_path, json_path], check=True)
+    pdf_path = json_path.replace(".json", ".pdf")
+    _render_pdf(cert, pdf_path)
+    return {"json": json_path, "sig": sig_path, "pdf": pdf_path, "pubkey": pub}
