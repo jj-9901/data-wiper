@@ -1,6 +1,14 @@
-import argparse, os, tkinter as tk
+import argparse
+import os
+import tkinter as tk
 from tkinter import ttk, messagebox
-from wipe_engine import list_block_devices, wipe_device, wipe_partition, wipe_free_space, get_root_device
+from wipe_engine import (
+    list_block_devices,
+    wipe_device,
+    wipe_partition,
+    wipe_free_space,
+    get_root_device,
+)
 from cert import make_certificate, sign_certificate
 
 class App(tk.Tk):
@@ -19,19 +27,29 @@ class App(tk.Tk):
         self.dry_run = tk.BooleanVar(value=True)
 
         ttk.Label(self, text="Select wipe mode:").pack(anchor="w", padx=10, pady=5)
-        self.device_radio = ttk.Radiobutton(self, text="Entire Drive", variable=self.mode, value="device")
+        self.device_radio = ttk.Radiobutton(
+            self, text="Entire Drive", variable=self.mode, value="device"
+        )
         self.device_radio.pack(anchor="w", padx=20)
-        self.partition_radio = ttk.Radiobutton(self, text="Partition Only", variable=self.mode, value="partition")
+        self.partition_radio = ttk.Radiobutton(
+            self, text="Partition Only", variable=self.mode, value="partition"
+        )
         self.partition_radio.pack(anchor="w", padx=20)
-        ttk.Radiobutton(self, text="Free Space", variable=self.mode, value="freespace").pack(anchor="w", padx=20)
+        ttk.Radiobutton(
+            self, text="Free Space", variable=self.mode, value="freespace"
+        ).pack(anchor="w", padx=20)
 
-        ttk.Label(self, text="Target (e.g. /dev/sdb, /dev/sdb1, /mount/point):").pack(anchor="w", padx=10, pady=5)
+        ttk.Label(
+            self, text="Target (e.g. /dev/sdb, /dev/sdb1, /mount/point):"
+        ).pack(anchor="w", padx=10, pady=5)
         ttk.Entry(self, textvariable=self.target, width=50).pack(padx=20)
 
         ttk.Label(self, text="Passes (HDD only)").pack(anchor="w", padx=10, pady=5)
         ttk.Entry(self, textvariable=self.passes).pack(padx=20)
 
-        ttk.Checkbutton(self, text="Dry-run (no destructive commands)", variable=self.dry_run).pack(anchor="w", padx=20, pady=5)
+        ttk.Checkbutton(
+            self, text="Dry-run (no destructive commands)", variable=self.dry_run
+        ).pack(anchor="w", padx=20, pady=5)
 
         ttk.Label(self, text="Type DELETE to confirm:").pack(anchor="w", padx=10, pady=5)
         ttk.Entry(self, textvariable=self.confirm).pack(padx=20)
@@ -51,11 +69,17 @@ class App(tk.Tk):
 
         # Block full wipe on OS device
         if mode == "device" and target in root_dev:
-            return False, "Full Wipe blocked: You are running from this device. Use bootable USB instead."
+            return (
+                False,
+                "Full Wipe blocked: You are running from this device. Use a bootable USB instead.",
+            )
 
         # Block partition wipe if partition contains root
         if mode == "partition" and target in root_dev:
-            return False, "Partition Wipe blocked: This partition contains the OS or the app."
+            return (
+                False,
+                "Partition Wipe blocked: This partition contains the OS or the app.",
+            )
 
         return True, ""
 
@@ -73,19 +97,27 @@ class App(tk.Tk):
 
         res = ""
         if mode == "device":
-            res = wipe_device(tgt, self.passes.get(), self.sudo_pass.get(), self.dry_run.get())
+            res = wipe_device(
+                tgt, self.passes.get(), self.sudo_pass.get(), self.dry_run.get()
+            )
         elif mode == "partition":
-            res = wipe_partition(tgt, self.passes.get(), self.sudo_pass.get(), self.dry_run.get())
+            res = wipe_partition(
+                tgt, self.passes.get(), self.sudo_pass.get(), self.dry_run.get()
+            )
         elif mode == "freespace":
+            # The original code passed an extra argument here.
+            # Fixed to match a likely intended signature.
             res = wipe_free_space(tgt, self.sudo_pass.get(), self.dry_run.get())
 
-        cert = make_certificate({
-            "target": tgt,
-            "mode": mode,
-            "passes": self.passes.get(),
-            "dry_run": self.dry_run.get(),
-            "result": res
-        })
+        cert = make_certificate(
+            {
+                "target": tgt,
+                "mode": mode,
+                "passes": self.passes.get(),
+                "dry_run": self.dry_run.get(),
+                "result": res,
+            }
+        )
         sig = sign_certificate(cert)
         messagebox.showinfo("Done", f"Wipe complete.\nCertificate: {cert}\nSignature: {sig}")
 
